@@ -1,22 +1,65 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <title>Fun Drawing Game</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Chaotic Draw — Lớp vẽ chung</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>🎨 Multiplayer Drawing Game</h1>
-    <div class="controls">
-        <input type="color" id="colorPicker" value="#000000">
-        <button id="eraserBtn">🧽 Erase</button>
-        <span id="cooldownText"></span>
+  <!-- Join overlay -->
+  <div id="overlay" class="overlay">
+    <div class="card join">
+      <h2>Chào mừng — Nhập tên để vào phòng</h2>
+      <input id="nameInput" placeholder="Tên của bạn (ví dụ: Mai)" maxlength="30" />
+      <input id="roomInput" placeholder="Phòng (hash). Mặc định: 'lop46' " />
+      <div class="row">
+        <button id="joinBtn" class="btn primary">🎉 Vào phòng</button>
+        <button id="guestBtn" class="btn ghost">Vào ẩn danh</button>
+      </div>
+      <p class="muted small">Link phòng dùng hash ở URL. Ví dụ: <code>#lop46</code></p>
     </div>
-    <canvas id="drawCanvas"></canvas>
+  </div>
 
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js"></script>
-    <script src="firebase-config.js"></script>
-    <script src="script.js"></script>
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="left">
+      <div class="logo">🎨 Chaotic Draw</div>
+      <div class="muted small">Room: <span id="roomName">—</span></div>
+    </div>
+
+    <div class="center">
+      <div class="muted small">Players: <strong id="playerCount">0</strong></div>
+      <div id="playerList" class="players"></div>
+    </div>
+
+    <div class="right">
+      <div class="group">
+        <input type="color" id="color" value="#ec4899" title="Màu" />
+        <input type="range" id="size" min="2" max="28" value="6" />
+        <button id="penBtn" class="btn">✏️ Bút</button>
+        <button id="eraserBtn" class="btn danger">🧹 Tẩy</button>
+        <div class="cool small">Tẩy: <span id="eraseLeft">0</span> • CD: <span id="cd">0</span>s</div>
+      </div>
+
+      <div class="group">
+        <button id="shareBtn" class="btn ghost">🔗 Share</button>
+        <button id="clearLocal" class="btn ghost">🧽 Clear local</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Canvas -->
+  <main class="stage">
+    <canvas id="canvas"></canvas>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Firebase config (non-module global) -->
+  <script src="firebase-config.js"></script>
+
+  <!-- App logic (module) -->
+  <script type="module" src="script.js"></script>
 </body>
 </html>
