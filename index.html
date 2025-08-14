@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Fun Drawing Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>🎨 Multiplayer Drawing Game</h1>
+    <div class="controls">
+        <input type="color" id="colorPicker" value="#000000">
+        <button id="eraserBtn">🧽 Erase</button>
+        <span id="cooldownText"></span>
+    </div>
+    <canvas id="drawCanvas"></canvas>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
