@@ -5,16 +5,18 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 
 // ========= Init Firebase =========
-if(typeof firebaseConfig === 'undefined') {
-  alert('Please fill firebase-config.js with your Firebase config.');
+// Use global window.firebaseConfig placed by firebase-config.js
+if(!window.firebaseConfig){
+  alert('Missing Firebase config (firebase-config.js). Please add it.');
   throw new Error('Missing firebaseConfig');
 }
-const app = initializeApp(firebaseConfig);
+const app = initializeApp(window.firebaseConfig);
 const db = getDatabase(app);
 
 // ========= Room & local id =========
 const room = (location.hash?.slice(1) || 'lop46');
-document.getElementById('roomName').textContent = room;
+const roomNameEl = document.getElementById('roomName');
+if(roomNameEl) roomNameEl.textContent = room;
 let clientId = localStorage.getItem('chaotic_id');
 if(!clientId){ clientId = crypto.randomUUID(); localStorage.setItem('chaotic_id', clientId); }
 
@@ -85,18 +87,26 @@ guestBtn.addEventListener('click', () => {
 });
 
 function enterRoom(){
-  overlay.style.display = 'none';
+  if(overlay) overlay.style.display = 'none';
   const pRef = ref(db, `rooms/${room}/players/${clientId}`);
   set(pRef, { name: username, t: Date.now() });
-  onDisconnect(pRef).remove();
+  const od = onDisconnect(pRef);
+  od.remove();
+  // heartbeat
   setInterval(()=> set(pRef, { name: username, t: Date.now() }), 20_000);
 
-  onValue(playersRef, snap => renderPlayers(snap.val() || {}));
-
-  onChildAdded(strokesRef, snap => {
-    const s = snap.val(); if(!s) return;
-    drawSegment(s, false);
+  onValue(playersRef, snap => {
+    const v = snap.val() || {};
+    renderPlayers(v);
   });
+
+  // listen strokes (last 2000) and new ones
+  const recentQuery = query(strokesRef, limitToLast(2000));
+  onChildAdded(recentQuery, snap => {
+    const s = snap.val(); if(!s) return;
+    drawSegment(s);
+  });
+
   onChildAdded(eventsRef, snap => {
     const e = snap.val(); if(!e) return;
     if(e.type === 'erase-notify') showToast(`${e.by} đã tẩy!`);
@@ -108,8 +118,9 @@ function enterRoom(){
 }
 
 function renderPlayers(obj){
+  if(!playerListEl || !playerCountEl) return;
   playerListEl.innerHTML = '';
-  const arr = Object.entries(obj).map(([id,v]) => ({ id, name: v.name }));
+  const arr = Object.entries(obj || {}).map(([id,v]) => ({ id, name: v.name }));
   playerCountEl.textContent = arr.length;
   arr.forEach(p => {
     const el = document.createElement('span');
@@ -167,11 +178,13 @@ function startDraw(e){
   if(!username){ showToast('Bạn chưa nhập tên!'); return; }
   drawing = true;
   last = getPos(e);
-  e.preventDefault();
+  // prevent page scroll/zoom while drawing
+  try { e.preventDefault(); } catch(_) {}
 }
 function moveDraw(e){
   if(!drawing) return;
   const p = getPos(e);
+  if(!last) last = p;
   if(tool === 'pen'){
     const seg = { color: colorEl.value, size: parseInt(sizeEl.value,10), eraser: false };
     line(last, p, seg);
@@ -193,7 +206,7 @@ function moveDraw(e){
     updateCooldownUI();
   }
   last = p;
-  e.preventDefault();
+  try { e.preventDefault(); } catch(_) {}
 }
 function endDraw(){
   drawing = false;
@@ -201,27 +214,27 @@ function endDraw(){
   toolUsedAnnounced = false;
 }
 
-// Desktop pointer
+// Pointer (desktop)
 canvas.addEventListener('pointerdown', startDraw);
 canvas.addEventListener('pointermove', moveDraw);
 canvas.addEventListener('pointerup', endDraw);
 canvas.addEventListener('pointercancel', endDraw);
 
-// iOS / mobile touch fallback
+// Touch fallback (mobile)
 canvas.addEventListener('touchstart', startDraw, { passive:false });
 canvas.addEventListener('touchmove', moveDraw, { passive:false });
 canvas.addEventListener('touchend', endDraw, { passive:false });
 
 // ========= Tools UI =========
-penBtn.addEventListener('click', ()=> setTool('pen'));
-eraserBtn.addEventListener('click', tryUseEraser);
+if (penBtn) penBtn.addEventListener('click', ()=> setTool('pen'));
+if (eraserBtn) eraserBtn.addEventListener('click', tryUseEraser);
 
 function setTool(t){
   tool = t;
   if(t === 'pen'){
-    penBtn.classList.add('primary'); eraserBtn.classList.remove('primary');
+    penBtn?.classList.add('primary'); eraserBtn?.classList.remove('primary');
   } else {
-    penBtn.classList.remove('primary'); eraserBtn.classList.add('primary');
+    penBtn?.classList.remove('primary'); eraserBtn?.classList.add('primary');
   }
 }
 
@@ -260,23 +273,19 @@ function startCooldown(){
 }
 
 function updateCooldownUI(){
-  eraseLeftEl.textContent = Math.max(0, Math.floor(eraseBudget));
-  cdEl.textContent = cooldown;
+  if(eraseLeftEl) eraseLeftEl.textContent = Math.max(0, Math.floor(eraseBudget));
+  if(cdEl) cdEl.textContent = cooldown;
 }
 
-// ========= Recent history =========
-const recentQuery = query(strokesRef, limitToLast(1000));
-onChildAdded(recentQuery, snap => {
-  const s = snap.val(); if(!s) return;
-  drawSegment(s);
-});
+// ========= Recent history (limit) =========
+// already set above in enterRoom using query + onChildAdded
 
 // ========= Share / clear local =========
-shareBtn.addEventListener('click', ()=> {
+if(shareBtn) shareBtn.addEventListener('click', ()=> {
   const link = location.href.split('#')[0] + '#' + room;
   navigator.clipboard.writeText(link).then(()=> showToast('Đã copy link phòng'));
 });
-clearLocalBtn.addEventListener('click', ()=> {
+if(clearLocalBtn) clearLocalBtn.addEventListener('click', ()=> {
   if(confirm('Chỉ xoá canvas trên máy bạn (không xóa online). Tiếp tục?')){
     ctx.clearRect(0,0,canvas.width,canvas.height);
   }
@@ -285,6 +294,7 @@ clearLocalBtn.addEventListener('click', ()=> {
 // ========= Toast =========
 let toastTimer = null;
 function showToast(msg){
+  if(!toastEl) return;
   toastEl.textContent = msg;
   toastEl.classList.add('show');
   clearTimeout(toastTimer);
@@ -293,12 +303,14 @@ function showToast(msg){
 
 // ========= Remove presence on leave =========
 window.addEventListener('beforeunload', () => {
-  const pRef = ref(db, `rooms/${room}/players/${clientId}`);
-  remove(pRef).catch(()=>{});
+  try {
+    const pRef = ref(db, `rooms/${room}/players/${clientId}`);
+    remove(pRef).catch(()=>{});
+  } catch(e){}
 });
 
 // ========= Init defaults =========
 setTool('pen');
-eraseLeftEl.textContent = ERASE_BUDGET_MAX;
-cdEl.textContent = 0;
+if(eraseLeftEl) eraseLeftEl.textContent = ERASE_BUDGET_MAX;
+if(cdEl) cdEl.textContent = 0;
 updateCooldownUI();
