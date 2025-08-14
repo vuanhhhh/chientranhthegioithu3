@@ -73,7 +73,7 @@ const eventsRef = ref(db, `rooms/${room}/events`);
 joinBtn.addEventListener('click', () => {
   const nm = nameInput.value.trim();
   const r = roomInput.value.trim();
-  if(r) { location.hash = r; /* reload to set room*/ location.reload(); return; }
+  if(r) { location.hash = r; location.reload(); return; }
   if(!nm){ showToast('Nhập tên trước khi vào.'); return; }
   username = nm;
   enterRoom();
@@ -86,21 +86,13 @@ guestBtn.addEventListener('click', () => {
 
 function enterRoom(){
   overlay.style.display = 'none';
-  // write presence
   const pRef = ref(db, `rooms/${room}/players/${clientId}`);
   set(pRef, { name: username, t: Date.now() });
   onDisconnect(pRef).remove();
-
-  // update last-seen heartbeat
   setInterval(()=> set(pRef, { name: username, t: Date.now() }), 20_000);
 
-  // listen players
-  onValue(playersRef, snap => {
-    const v = snap.val() || {};
-    renderPlayers(v);
-  });
+  onValue(playersRef, snap => renderPlayers(snap.val() || {}));
 
-  // listen strokes/events
   onChildAdded(strokesRef, snap => {
     const s = snap.val(); if(!s) return;
     drawSegment(s, false);
@@ -115,10 +107,9 @@ function enterRoom(){
   });
 }
 
-// render players & count
 function renderPlayers(obj){
   playerListEl.innerHTML = '';
-  const arr = Object.entries(obj || {}).map(([id,v]) => ({ id, name: v.name }));
+  const arr = Object.entries(obj).map(([id,v]) => ({ id, name: v.name }));
   playerCountEl.textContent = arr.length;
   arr.forEach(p => {
     const el = document.createElement('span');
@@ -134,64 +125,64 @@ function line(a,b,opt){
   if(opt.eraser){
     ctx.globalCompositeOperation = 'destination-out';
     ctx.lineWidth = opt.size;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   } else {
     ctx.globalCompositeOperation = 'source-over';
     ctx.strokeStyle = opt.color;
     ctx.lineWidth = opt.size;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   }
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   ctx.restore();
 }
 
-function drawSegment(s, local){
-  // s: { a:{x,y}, b:{x,y}, color, size, eraser, by, t }
+function drawSegment(s){
   line(s.a, s.b, { color: s.color || '#000', size: s.size || 6, eraser: !!s.eraser });
-  // if local==true we already drew; otherwise it was remote
 }
 
-// send to firebase
 function pushStroke(a,b,opt){
   push(strokesRef, {
     a, b, color: opt.color, size: opt.size, eraser: !!opt.eraser, by: username, t: serverTimestamp()
   });
 }
 
-// ========= Pointer events =========
+// ========= Position helpers =========
 function getPos(e){
   const r = canvas.getBoundingClientRect();
-  const x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
-  const y = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
+  let x, y;
+  if(e.touches && e.touches[0]){
+    x = e.touches[0].clientX - r.left;
+    y = e.touches[0].clientY - r.top;
+  } else {
+    x = e.clientX - r.left;
+    y = e.clientY - r.top;
+  }
   return { x, y };
 }
 
-canvas.addEventListener('pointerdown', (ev) => {
+// ========= Drawing logic =========
+let toolUsedAnnounced = false;
+
+function startDraw(e){
   if(!username){ showToast('Bạn chưa nhập tên!'); return; }
   drawing = true;
-  last = getPos(ev);
-  canvas.setPointerCapture(ev.pointerId);
-});
-
-canvas.addEventListener('pointermove', (ev) => {
+  last = getPos(e);
+  e.preventDefault();
+}
+function moveDraw(e){
   if(!drawing) return;
-  const p = getPos(ev);
+  const p = getPos(e);
   if(tool === 'pen'){
     const seg = { color: colorEl.value, size: parseInt(sizeEl.value,10), eraser: false };
     line(last, p, seg);
     pushStroke(last, p, seg);
   } else if(tool === 'eraser'){
-    // decrement budget by distance
     const dx = p.x - last.x, dy = p.y - last.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
     eraseBudget -= dist;
     const seg = { color: null, size: ERASE_RADIUS, eraser: true };
     line(last, p, seg);
     pushStroke(last, p, seg);
-    // if announce eraser (send event once per use)
     if(!toolUsedAnnounced){ announceEraser(); toolUsedAnnounced = true; }
     if(eraseBudget <= 0){
       eraseBudget = 0;
@@ -202,19 +193,24 @@ canvas.addEventListener('pointermove', (ev) => {
     updateCooldownUI();
   }
   last = p;
-});
-
-let toolUsedAnnounced = false;
-
-canvas.addEventListener('pointerup', (ev) => {
+  e.preventDefault();
+}
+function endDraw(){
   drawing = false;
   last = null;
-  canvas.releasePointerCapture?.(ev.pointerId);
   toolUsedAnnounced = false;
-});
+}
 
-// mouse leave
-canvas.addEventListener('pointercancel', () => { drawing = false; last = null; toolUsedAnnounced = false; });
+// Desktop pointer
+canvas.addEventListener('pointerdown', startDraw);
+canvas.addEventListener('pointermove', moveDraw);
+canvas.addEventListener('pointerup', endDraw);
+canvas.addEventListener('pointercancel', endDraw);
+
+// iOS / mobile touch fallback
+canvas.addEventListener('touchstart', startDraw, { passive:false });
+canvas.addEventListener('touchmove', moveDraw, { passive:false });
+canvas.addEventListener('touchend', endDraw, { passive:false });
 
 // ========= Tools UI =========
 penBtn.addEventListener('click', ()=> setTool('pen'));
@@ -229,7 +225,6 @@ function setTool(t){
   }
 }
 
-// Eraser flow
 function tryUseEraser(){
   if(cooldown > 0){
     showToast(`Tẩy đang cooldown ${cooldown}s`);
@@ -243,12 +238,10 @@ function tryUseEraser(){
   setTool('eraser');
 }
 
-// announce erase event to room (so everyone sees who erased)
 function announceEraser(){
   push(eventsRef, { type: 'erase-notify', by: username, t: serverTimestamp() });
 }
 
-// cooldown logic
 function startCooldown(){
   cooldown = ERASE_COOLDOWN;
   eraseBudget = 0;
@@ -271,13 +264,11 @@ function updateCooldownUI(){
   cdEl.textContent = cooldown;
 }
 
-// ========= Send & receive stroke history (last N) =========
-// Optionally load last N strokes to catch up
+// ========= Recent history =========
 const recentQuery = query(strokesRef, limitToLast(1000));
 onChildAdded(recentQuery, snap => {
   const s = snap.val(); if(!s) return;
-  // draw existing strokes (they will also trigger normal onChildAdded; duplicates possible but acceptable)
-  drawSegment(s,false);
+  drawSegment(s);
 });
 
 // ========= Share / clear local =========
@@ -291,9 +282,6 @@ clearLocalBtn.addEventListener('click', ()=> {
   }
 });
 
-// Admin clear (optional) - you can implement admin logic; here we listen to clear events in eventsRef
-// ... already handled in onChildAdded for events
-
 // ========= Toast =========
 let toastTimer = null;
 function showToast(msg){
@@ -303,13 +291,13 @@ function showToast(msg){
   toastTimer = setTimeout(()=> toastEl.classList.remove('show'), 1800);
 }
 
-// ========= Unload: remove presence =========
+// ========= Remove presence on leave =========
 window.addEventListener('beforeunload', () => {
   const pRef = ref(db, `rooms/${room}/players/${clientId}`);
   remove(pRef).catch(()=>{});
 });
 
-// ========= Init small UI defaults =========
+// ========= Init defaults =========
 setTool('pen');
 eraseLeftEl.textContent = ERASE_BUDGET_MAX;
 cdEl.textContent = 0;
