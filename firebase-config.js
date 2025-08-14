@@ -1,5 +1,5 @@
-// Your Firebase config from console
-const firebaseConfig = {
+// Firebase config placed on window so module script can access it.
+window.firebaseConfig = {
   apiKey: "AIzaSyAlW1ItLZoR-xr0OJJgBBuz-3Shgprx7Yg",
   authDomain: "daichien-l.firebaseapp.com",
   databaseURL: "https://daichien-l-default-rtdb.asia-southeast1.firebasedatabase.app",
